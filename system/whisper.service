@@ -1,0 +1,15 @@
+[Unit]
+Description=Faster-Whisper Pi Transcription Service
+After=network.target sound.target
+
+[Service]
+Type=simple
+User=pi
+WorkingDirectory=/home/pi/faster-eScribe
+ExecStart=/home/pi/faster-eScribe/venv/bin/python src/transcribe_pi.py
+Restart=always
+RestartSec=5
+Environment="PYTHONUNBUFFERED=1"
+
+[Install]
+WantedBy=multi-user.target

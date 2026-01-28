@@ -1,0 +1,22 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.pdb
+*.egg-info/
+*.egg
+
+# Virtual environment
+venv/
+.env
+
+# Logs
+logs/
+*.log
+
+# MacOS
+.DS_Store
+
+# Misc
+*.swp
