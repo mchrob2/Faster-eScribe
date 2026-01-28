@@ -2,70 +2,122 @@ import sounddevice as sd
 import numpy as np
 from faster_whisper import WhisperModel
 import os
+import queue
+import threading
 from dotenv import load_dotenv
+import time
 
-# --- Load Hugging Face token ---
+# Environment / HF token
 load_dotenv()
 hf_token = os.getenv("HF_TOKEN")
 if hf_token:
     os.environ["HF_TOKEN"] = hf_token
 
-# --- Configuration ---
-DURATION = 3        # seconds per chunk
-FS = 16000          # sample rate
-OVERLAP = 1         # seconds of overlap between chunks
+# Configuration
+FS = 16000                 # Sample rate
+DURATION = 4               # Seconds per chunk
+OVERLAP = 1                # Seconds of overlap
 MODEL_SIZE = "small.en"
 DEVICE = "cpu"
-THRESHOLD = 0.01    # silence threshold (RMS)
+THRESHOLD = 0.01           # RMS silence threshold
 LOG_FILE = "logs/transcripts.txt"
 
 os.makedirs("logs", exist_ok=True)
 
-# --- Load model ---
-print("Loading model...")
-model = WhisperModel(MODEL_SIZE, device=DEVICE, compute_type="int8")
-print("Model loaded. Starting transcription loop.\n")
 
-# --- Initialize previous audio for overlap ---
+# Load model
+print("Loading Whisper model...")
+model = WhisperModel(
+    MODEL_SIZE,
+    device=DEVICE,
+    compute_type="int8"
+)
+print("Model loaded.\n")
+
+# Helper
+def is_speech(audio, threshold=THRESHOLD):
+    return np.sqrt(np.mean(audio ** 2)) > threshold
+
+# Shared state
+audio_queue = queue.Queue(maxsize=5)
 prev_audio = np.array([], dtype=np.float32)
+stop_event = threading.Event()
 
-def is_speech(audio_chunk, threshold=THRESHOLD):
-    """Return True if RMS amplitude exceeds threshold"""
-    return np.sqrt(np.mean(audio_chunk**2)) > threshold
+# Audio recording thread
+def record_loop():
+    global prev_audio
+    try:
+        while not stop_event.is_set():
+            audio = sd.rec(
+                int(DURATION * FS),
+                samplerate=FS,
+                channels=1,
+                dtype="float32"
+            )
+            sd.wait()
+            audio = np.squeeze(audio)
+
+            # prepend overlap
+            if prev_audio.size > 0:
+                audio = np.concatenate([prev_audio, audio])
+
+            # save overlap
+            prev_audio = audio[-int(OVERLAP * FS):]
+
+            if not is_speech(audio):
+                continue
+
+            try:
+                audio_queue.put(audio, timeout=1)
+            except queue.Full:
+                pass  # drop chunk if transcriber lags
+    finally:
+        sd.stop()
+
+# Transcription thread
+def transcribe_loop():
+    with open(LOG_FILE, "a") as log:
+        while not stop_event.is_set():
+            try:
+                audio = audio_queue.get(timeout=1)
+            except queue.Empty:
+                continue
+
+            segments, info = model.transcribe(
+                audio,
+                beam_size=5,
+                vad_filter=False
+            )
+
+            for s in segments:
+                text = s.text.strip()
+                if text:
+                    line = f"[{s.start:.2f}s → {s.end:.2f}s] {text}"
+                    print(line)
+                    log.write(line + "\n")
+                    log.flush()
+
+            audio_queue.task_done()
+
+# Start threads
+rec_thread = threading.Thread(target=record_loop)
+tr_thread = threading.Thread(target=transcribe_loop)
+
+rec_thread.start()
+tr_thread.start()
+
+print("Live transcription running (Ctrl+C to stop)\n")
+
+# Main loop
 
 try:
     while True:
-        print(f"Recording {DURATION}s of audio...")
-        audio = sd.rec(int(DURATION * FS), samplerate=FS, channels=1)
-        sd.wait()
-        audio = np.squeeze(audio).astype(np.float32)
-
-        # prepend previous overlap
-        if prev_audio.size > 0:
-            audio = np.concatenate([prev_audio, audio])
-
-        if not is_speech(audio):
-            print("Silence detected, skipping chunk.")
-            # keep last overlap for next chunk
-            prev_audio = audio[-int(OVERLAP * FS):]
-            continue
-
-        print("Transcribing...")
-        segments, info = model.transcribe(audio, beam_size=5)
-
-        output_lines = [f"Detected language: {info.language}"]
-        for s in segments:
-            line = f"[{s.start:.2f}s → {s.end:.2f}s] {s.text}"
-            print(line)
-            output_lines.append(line)
-
-        # Save to log file
-        with open(LOG_FILE, "a") as f:
-            f.write("\n".join(output_lines) + "\n")
-        print("-" * 40)
-
-        # Save last OVERLAP seconds for next chunk
-        prev_audio = audio[-int(OVERLAP * FS):]
-
+        time.sleep(1)
 except KeyboardInterrupt:
-    print("\nStopping transcription loop. Goodbye!")
+    print("\nStopping transcription...")
+    stop_event.set()
+
+    rec_thread.join()
+    tr_thread.join()
+
+    print("Goodbye")
