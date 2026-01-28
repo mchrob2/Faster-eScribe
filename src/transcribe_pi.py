@@ -4,7 +4,7 @@ from faster_whisper import WhisperModel
 import os
 from dotenv import load_dotenv
 
-# --- Load Hugging Face token from .env ---
+# --- Load Hugging Face token ---
 load_dotenv()
 hf_token = os.getenv("HF_TOKEN")
 if hf_token:
