@@ -14,7 +14,7 @@ if hf_token:
 DURATION = 3        # seconds per chunk
 FS = 16000          # sample rate
 OVERLAP = 1         # seconds of overlap between chunks
-MODEL_SIZE = "tiny.en"
+MODEL_SIZE = "small.en"
 DEVICE = "cpu"
 THRESHOLD = 0.01    # silence threshold (RMS)
 LOG_FILE = "logs/transcripts.txt"

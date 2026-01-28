@@ -1,12 +1,20 @@
 import sounddevice as sd
 import numpy as np
 from faster_whisper import WhisperModel
+import os
+from dotenv import load_dotenv
+
+# --- Load Hugging Face token ---
+load_dotenv()
+hf_token = os.getenv("HF_TOKEN")
+if hf_token:
+    os.environ["HF_TOKEN"] = hf_token
 
 # --- Configuration ---
 DURATION = 5        # seconds per chunk
 FS = 16000          # sample rate
 DEVICE = "cpu"
-MODEL_SIZE = "tiny.en"
+MODEL_SIZE = "small.en"
 
 # --- Load model once ---
 print("Loading model...")
@@ -22,9 +30,8 @@ try:
         audio = np.squeeze(audio).astype(np.float32)
 
         print("Transcribing...")
-        segments, info = model.transcribe(audio, beam_size=5)
+        segments, info = model.transcribe(audio, beam_size=5, language='en')
 
-        print("Detected language:", info.language)
         for s in segments:
             print(f"[{s.start:.2f}s → {s.end:.2f}s] {s.text}")
         print("-" * 40)  # separator between chunks
