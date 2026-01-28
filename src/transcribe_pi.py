@@ -21,9 +21,25 @@ MODEL_SIZE = "small.en"
 DEVICE = "cpu"
 THRESHOLD = 0.01           # RMS silence threshold
 LOG_FILE = "logs/transcripts.txt"
+USB_MIC_NAME = "USB Audio"  # part of the name of your USB mic
 
 os.makedirs("logs", exist_ok=True)
 
+# Select USB microphone
+def find_usb_mic(name_part=USB_MIC_NAME):
+    devices = sd.query_devices()
+    for i, dev in enumerate(devices):
+        if dev['max_input_channels'] > 0 and name_part.lower() in dev['name'].lower():
+            return i
+    return None
+
+mic_index = None
+while mic_index is None:
+    mic_index = find_usb_mic()
+    if mic_index is None:
+        print("USB mic not found. Please plug it in...")
+        time.sleep(2)
+print(f"Using USB mic at index {mic_index}: {sd.query_devices(mic_index)['name']}")
 
 # Load model
 print("Loading Whisper model...")
@@ -34,14 +50,26 @@ model = WhisperModel(
 )
 print("Model loaded.\n")
 
-# Helper
+# Helpers
 def is_speech(audio, threshold=THRESHOLD):
     return np.sqrt(np.mean(audio ** 2)) > threshold
+
+def merge_overlap(text, prev_words, max_overlap=5):
+    words = text.strip().split()
+    overlap_len = min(len(words), len(prev_words), max_overlap)
+
+    for i in range(overlap_len, 0, -1):
+        if prev_words[-i:] == words[:i]:
+            return " ".join(words[i:]), words
+    return " ".join(words), words
 
 # Shared state
 audio_queue = queue.Queue(maxsize=5)
 prev_audio = np.array([], dtype=np.float32)
 stop_event = threading.Event()
+global_time = 0.0          # running offset for timestamps
+last_end_time = 0.0        # deduplication
+prev_words = []            # for overlap smoothing
 
 # Audio recording thread
 def record_loop():
@@ -57,11 +85,11 @@ def record_loop():
             sd.wait()
             audio = np.squeeze(audio)
 
-            # prepend overlap
+            # prepend overlap from previous chunk
             if prev_audio.size > 0:
                 audio = np.concatenate([prev_audio, audio])
 
-            # save overlap
+            # save last OVERLAP seconds
             prev_audio = audio[-int(OVERLAP * FS):]
 
             if not is_speech(audio):
@@ -70,12 +98,13 @@ def record_loop():
             try:
                 audio_queue.put(audio, timeout=1)
             except queue.Full:
-                pass  # drop chunk if transcriber lags
+                pass  # drop if transcriber lags
     finally:
         sd.stop()
 
 # Transcription thread
 def transcribe_loop():
+    global global_time, last_end_time, prev_words
     with open(LOG_FILE, "a") as log:
         while not stop_event.is_set():
             try:
@@ -90,12 +119,27 @@ def transcribe_loop():
             )
 
             for s in segments:
+                start = s.start + global_time
+                end = s.end + global_time
                 text = s.text.strip()
-                if text:
-                    line = f"[{s.start:.2f}s → {s.end:.2f}s] {text}"
-                    print(line)
-                    log.write(line + "\n")
-                    log.flush()
+
+                if end <= last_end_time or not text:
+                    continue
+
+                # merge overlapping words with previous chunk
+                merged_text, prev_words = merge_overlap(text, prev_words)
+                if not merged_text:
+                    continue
+
+                line = f"[{start:.2f}s → {end:.2f}s] {merged_text}"
+                print(line)
+                log.write(line + "\n")
+                log.flush()
+
+                last_end_time = end
+
+            # increment running timestamp
+            global_time += (DURATION - OVERLAP)
 
             audio_queue.task_done()
 
@@ -108,8 +152,8 @@ tr_thread.start()
 
 print("Live transcription running (Ctrl+C to stop)\n")
 
-# Main loop
 
+# Main loop
 try:
     while True:
         time.sleep(1)
