@@ -6,6 +6,13 @@ import queue
 import threading
 from dotenv import load_dotenv
 import time
+from zoneinfo import ZoneInfo
+from datetime import datetime
+
+# Date / Time
+dt = datetime.now(ZoneInfo("America/Chicago"))
+dt = f"{dt:%Y-%m-%d_%H:%M:%S}"
+print(dt)
 
 # Environment / HF token
 load_dotenv()
@@ -20,7 +27,7 @@ OVERLAP = 1                # Seconds of overlap
 MODEL_SIZE = "small.en"
 DEVICE = "cpu"
 THRESHOLD = 0.01           # RMS silence threshold
-LOG_FILE = "logs/transcripts.txt"
+LOG_FILE = f"logs/{dt}.txt"
 
 os.makedirs("logs", exist_ok=True)
 
