@@ -15,8 +15,8 @@ if hf_token:
 
 # Configuration
 FS = 16000                 # Sample rate
-DURATION = 5               # Seconds per chunk
-OVERLAP = 1                # Seconds of overlap
+DURATION = 3               # Seconds per chunk
+OVERLAP = 0.5                # Seconds of overlap
 MODEL_SIZE = "tiny.en"
 DEVICE = "cpu"
 THRESHOLD = 0.01           # RMS silence threshold
@@ -64,7 +64,7 @@ def merge_overlap(text, prev_words, max_overlap=5):
     return " ".join(words), words
 
 # Shared state
-audio_queue = queue.Queue(maxsize=5)
+audio_queue = queue.Queue(maxsize=2)
 prev_audio = np.array([], dtype=np.float32)
 stop_event = threading.Event()
 global_time = 0.0          # running offset for timestamps
