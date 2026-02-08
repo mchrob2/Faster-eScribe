@@ -25,7 +25,7 @@ CHUNK_SECONDS = 1.6        # how often we transcribe
 OVERLAP_SECONDS = 0.3
 MODEL_SIZE = "tiny.en"
 DEVICE = "cpu"
-COMPUTE_TYPE = "int8_float16"
+COMPUTE_TYPE = "int8"
 USB_MIC_NAME = "USB Audio"
 
 LOG_DIR = "logs"
