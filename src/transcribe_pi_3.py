@@ -1,3 +1,5 @@
+# slow but accurate
+
 import sounddevice as sd
 import numpy as np
 from faster_whisper import WhisperModel
@@ -21,8 +23,7 @@ if hf_token:
 
 # Configuration (Pi 5 tuned)
 FS = 16000
-CHUNK_SECONDS = 2.0        # how often we transcribe
-OVERLAP_SECONDS = 0.4
+CHUNK_SECONDS = 3.0        # how often we transcribe
 MODEL_SIZE = "small.en"
 DEVICE = "cpu"
 COMPUTE_TYPE = "int8"
@@ -55,7 +56,9 @@ print("Loading Whisper model...")
 model = WhisperModel(
     MODEL_SIZE,
     device=DEVICE,
-    compute_type=COMPUTE_TYPE
+    compute_type=COMPUTE_TYPE,
+    cpu_threads=4,
+    num_workers=1
 )
 print("Model loaded.\n")
 
@@ -97,7 +100,7 @@ def slicer_loop():
         time.sleep(CHUNK_SECONDS)
 
         with buffer_lock:
-            start = (write_pos - step - int(OVERLAP_SECONDS * FS)) % buffer_len
+            start = (write_pos - step) % buffer_len
             end = write_pos
 
             if start < end:
@@ -139,7 +142,11 @@ def transcribe_loop():
                 temperature=0,
                 language="en",
                 vad_filter=True,
-                condition_on_previous_text=False,
+                vad_parameters = {
+                    "threshold": 0.5,
+                    "min_speech_duration_ms": 250,
+                    "min_silence_duration_ms": 500
+                },
             )
 
             for seg in segments:
