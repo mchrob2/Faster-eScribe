@@ -1,4 +1,8 @@
-# transmitter_cp_final.py - COMPLETELY FIXED RFM69 Audio Transmitter
+# SPDX-FileCopyrightText: 2025 Your Name
+# SPDX-License-Identifier: MIT
+"""
+RFM69 Audio Transmitter – Low Latency (14 samples/packet)
+"""
 
 import board
 import busio
@@ -9,217 +13,151 @@ import struct
 import array
 from rfm69 import RFM69
 
-# ===== CONFIGURATION - MUST MATCH RECEIVER =====
+# ===== CONFIGURATION =====
 RADIO_FREQ_MHZ = 915.0
 NODE_ID = 1
 DEST_ID = 2
 ENCRYPTION_KEY = b"\x01\x02\x03\x04\x05\x06\x07\x08\x01\x02\x03\x04\x05\x06\x07\x08"
 SAMPLE_RATE = 2000
-SAMPLES_PER_PACKET = 10  # KEEP AT 10 - RECEIVER MUST MATCH!
-PACKET_SIZE = 4 + (SAMPLES_PER_PACKET * 2)  # 24 bytes
-TARGET_INTERVAL = 1.0 / (SAMPLE_RATE / SAMPLES_PER_PACKET)  # 5ms
+SAMPLES_PER_PACKET = 14                     # reduced from 28 → 7 ms audio per packet
+PACKET_SIZE = 4 + (SAMPLES_PER_PACKET * 2)  # 32 bytes
+TARGET_INTERVAL = 1.0 / (SAMPLE_RATE / SAMPLES_PER_PACKET)   # 7 ms
 
 print("=" * 60)
-print("RFM69 AUDIO TRANSMITTER - FINAL FIXED")
+print("RFM69 AUDIO TRANSMITTER – LOW LATENCY (14 samples/packet)")
 print("=" * 60)
 
 # ===== PIN SETUP =====
-print("\n[1/5] Setting up pins...")
 RFM_CS = digitalio.DigitalInOut(board.GP17)
 RFM_RST = digitalio.DigitalInOut(board.GP20)
-RFM_INT = digitalio.DigitalInOut(board.GP21)
+RFM_INT = digitalio.DigitalInOut(board.GP21)   # (unused)
 
 mic = analogio.AnalogIn(board.GP26)
-
 led = digitalio.DigitalInOut(board.LED)
 led.direction = digitalio.Direction.OUTPUT
 led.value = False
 
-print("  ✓ RFM69: CS=GP17, RST=GP20, INT=GP21")
-print("  ✓ Microphone: GP26")
-print("  ✓ LED: onboard")
+print(f"Microphone: GP26 | LED: onboard")
 
-# ===== SPI SETUP =====
-print("\n[2/5] Setting up SPI...")
+# ===== SPI SETUP (10 MHz for lower overhead) =====
 spi = busio.SPI(board.GP18, MOSI=board.GP19, MISO=board.GP16)
 while not spi.try_lock():
     pass
-spi.configure(baudrate=6000000, phase=0, polarity=0)  # 6MHz for stability
+spi.configure(baudrate=10_000_000, phase=0, polarity=0)  # 10 MHz (RFM69 max)
 spi.unlock()
-print("  ✓ SPI: 6MHz")
+print("SPI at 10 MHz")
 
-# ===== TEST RFM69 =====
-print("\n[3/5] Testing RFM69 connection...")
-try:
-    RFM_RST.direction = digitalio.Direction.OUTPUT
-    RFM_RST.value = False
-    time.sleep(0.01)
-    RFM_RST.value = True
-    time.sleep(0.01)
-    
-    test_radio = RFM69(spi, RFM_CS, RFM_RST, RADIO_FREQ_MHZ, baudrate=2000000)
-    temp = test_radio.temperature
-    print(f"  ✓ RFM69 detected! Temperature: {temp:.1f}°C")
-    print(f"  ✓ Chip version: 0x{test_radio._read_u8(0x10):02X}")
-    test_radio.idle()
-    del test_radio
-    time.sleep(0.1)
-except Exception as e:
-    print(f"  ✗ RFM69 connection FAILED: {e}")
-    print("\n=== CHECK WIRING ===")
-    print("  □ 3.3V power")
-    print("  □ Ground")
-    print("  □ SPI pins (GP18,19,16)")
-    print("  □ CS=GP17, RST=GP20")
-    while True:
-        led.value = not led.value
-        time.sleep(0.2)
+# ===== RADIO INITIALIZATION =====
+print("Initializing RFM69...")
+rf69 = RFM69(spi, RFM_CS, RFM_RST, RADIO_FREQ_MHZ, baudrate=2_000_000)
 
-# ===== INITIALIZE RADIO =====
-print("\n[4/5] Initializing RFM69...")
-try:
-    rf69 = RFM69(spi, RFM_CS, RFM_RST, RADIO_FREQ_MHZ, baudrate=2000000)
-    
-    # Configure for maximum power and reliability
-    rf69.tx_power = 20
-    rf69.encryption_key = ENCRYPTION_KEY
-    rf69.node = NODE_ID
-    rf69.destination = DEST_ID
-    
-    # CRITICAL: Disable all ACK/retry features for audio streaming
-    rf69.ack_retries = 0
-    rf69.ack_wait = 0
-    rf69.ack_delay = None
-    rf69.receive_timeout = 0.1
-    
-    # FIX: Override the xmit_timeout to prevent hanging
-    rf69.xmit_timeout = 0.5  # Shorter timeout (was 2.0)
-    
-    print("  ✓ RFM69 initialized successfully!")
-    print(f"  ✓ Node: {rf69.node}, Destination: {rf69.destination}")
-    print(f"  ✓ TX Power: {rf69.tx_power} dBm")
-    print(f"  ✓ Packet size: {PACKET_SIZE} bytes")
-    
-except Exception as e:
-    print(f"  ✗ RFM69 initialization FAILED: {e}")
-    while True:
-        led.value = not led.value
-        time.sleep(0.1)
+rf69.tx_power = 20
+rf69.encryption_key = ENCRYPTION_KEY
+rf69.node = NODE_ID
+rf69.destination = DEST_ID
 
-# ===== OPTIONAL PING TEST (don't wait for response) =====
-print("\n[5/5] Sending test ping...")
-try:
-    rf69.idle()
-    time.sleep(0.05)
-    rf69.send(b"PING")
-    print("  ✓ Ping sent (receiver may not reply)")
-except Exception as e:
-    print(f"  ⚠️  Ping failed: {e}")
+# Disable all ACK/retry features
+rf69.ack_retries = 0
+rf69.ack_wait = 0
+rf69.ack_delay = None
+rf69.receive_timeout = 0.1
+rf69.xmit_timeout = 0.05               # packet takes <1 ms
 
-print("\n" + "=" * 60)
-print("🎤 AUDIO TRANSMISSION STARTED")
-print(f"   Sample rate: {SAMPLE_RATE} Hz")
-print(f"   Samples/packet: {SAMPLES_PER_PACKET}")
-print(f"   Packet size: {PACKET_SIZE} bytes")
-print(f"   Target rate: {SAMPLE_RATE/SAMPLES_PER_PACKET:.0f} pkts/s")
-print(f"   Target interval: {TARGET_INTERVAL*1000:.1f} ms")
-print("=" * 60 + "\n")
+# Optional: increase FIFO threshold
+rf69.fifo_threshold = 20
 
-# ===== AUDIO TRANSMISSION LOOP =====
-packet_count = 0
+print(f"TX Power: {rf69.tx_power} dBm")
+print(f"Packet size: {PACKET_SIZE} bytes")
+print(f"Target packet interval: {TARGET_INTERVAL*1000:.2f} ms")
+
+# ===== PRE-ALLOCATE BUFFERS =====
+packet_buffer = bytearray(PACKET_SIZE)
 audio_buffer = array.array('H', [0] * SAMPLES_PER_PACKET)
-last_time = time.monotonic()
-last_print_time = last_time
+
+# ===== SEND TEST PING =====
+rf69.idle()
+time.sleep(0.05)
+rf69.send(b"PING")
+print("Test ping sent.\n")
+
+# ===== MAIN LOOP =====
+packet_count = 0
 start_time = None
+last_print_time = 0
 packet_errors = 0
+
+# For precise sampling: use time.monotonic_ns() if available
+try:
+    time.monotonic_ns
+    has_ns = True
+except AttributeError:
+    has_ns = False
+    print("Warning: monotonic_ns not available; using rough delays.")
+
+print("\nStarting audio transmission...\n")
 
 while True:
     try:
-        # Collect audio samples with micro-delays
-        for i in range(SAMPLES_PER_PACKET):
-            audio_buffer[i] = mic.value
-            if i < SAMPLES_PER_PACKET - 1:
-                time.sleep(0.0002)  # 200us between samples
-        
-        # Calculate audio level for visualization
-        audio_max = max(audio_buffer)
-        audio_min = min(audio_buffer)
-        audio_peak_peak = audio_max - audio_min
-        
-        # Prepare packet
+        # ----- Sample acquisition (precise) -----
+        if has_ns:
+            # 500 µs between samples using busy-wait
+            next_sample_ns = time.monotonic_ns()
+            for i in range(SAMPLES_PER_PACKET):
+                audio_buffer[i] = mic.value
+                next_sample_ns += 500_000          # 500 µs
+                while time.monotonic_ns() < next_sample_ns:
+                    pass
+        else:
+            # Fallback: simple sleep (less accurate)
+            for i in range(SAMPLES_PER_PACKET):
+                audio_buffer[i] = mic.value
+                if i < SAMPLES_PER_PACKET - 1:
+                    time.sleep(0.0005)             # 500 µs
+
+        # ----- Build packet without allocation -----
         packet_count += 1
-        packet = struct.pack('<I', packet_count) + \
-                 struct.pack(f'<{SAMPLES_PER_PACKET}H', *audio_buffer)
-        
-        # FIX: Always ensure radio is in idle mode before sending
-        rf69.idle()
-        time.sleep(0.0001)
-        
-        # Send packet (NO keep_listening, NO ACK)
-        success = rf69.send(packet)
-        
-        # Visual feedback
+        struct.pack_into('<I', packet_buffer, 0, packet_count)
+        struct.pack_into('<' + str(SAMPLES_PER_PACKET) + 'H',
+                         packet_buffer, 4, *audio_buffer)
+
+        # ----- Send (radio already idle) -----
+        success = rf69.send(packet_buffer, keep_listening=False)
+
+        # Simple LED blink
         led.value = True
         led.value = False
-        
-        # Initialize start_time after first successful send
+
+        # Record start time after first successful send
         if packet_count == 1 and success:
             start_time = time.monotonic()
-        
-        # Print status every 100 packets or ~1 second
-        current_time = time.monotonic()
-        if current_time - last_print_time >= 1.0 and packet_count > 0:
-            rate = 0
+
+        # ----- Statistics every 100 packets -----
+        if packet_count % 100 == 0:
+            current = time.monotonic()
             if start_time is not None:
-                rate = packet_count / (current_time - start_time)
-            
-            # Audio level visualization
-            level = int((audio_peak_peak / 65535) * 40)
-            viz = "█" * level + "░" * (40 - level)
-            
-            print(f"TX #{packet_count:6d} | "
-                  f"Rate: {rate:5.1f}/s | "
-                  f"Audio: {audio_peak_peak:5d} | "
-                  f"Errors: {packet_errors} | "
-                  f"[{viz}]")
-            
-            last_print_time = current_time
-        
-        # Maintain timing for consistent packet rate
-        elapsed = time.monotonic() - last_time
-        if elapsed < TARGET_INTERVAL:
-            time.sleep(TARGET_INTERVAL - elapsed)
-        last_time = time.monotonic()
-            
-    except KeyboardInterrupt:
-        print("\n\n" + "=" * 60)
-        print("📊 TRANSMITTER FINAL STATISTICS")
-        print("=" * 60)
-        
-        end_time = time.monotonic()
+                rate = packet_count / (current - start_time)
+                audio_pp = max(audio_buffer) - min(audio_buffer)
+                print(f"TX #{packet_count:6d} | rate {rate:5.1f}/s | "
+                      f"audio pp {audio_pp:5d} | errors {packet_errors}")
+            last_print_time = current
+
+        # ----- Maintain exact packet rate -----
         if start_time is not None:
-            runtime = end_time - start_time
-            avg_rate = packet_count / runtime if runtime > 0 else 0
-            print(f"\n   Packets sent:      {packet_count}")
-            print(f"   Runtime:           {runtime:.1f} seconds")
-            print(f"   Average rate:      {avg_rate:.1f} packets/sec")
-            print(f"   Packet errors:     {packet_errors}")
-            print(f"   Success rate:      {((packet_count-packet_errors)/packet_count*100):.1f}%")
-        
-        # Clean shutdown
-        rf69.idle()
-        rf69.sleep()
-        mic.deinit()
-        print("\n✅ Transmitter stopped cleanly")
+            next_deadline = start_time + packet_count * TARGET_INTERVAL
+            now = time.monotonic()
+            if now < next_deadline:
+                time.sleep(next_deadline - now)
+
+    except KeyboardInterrupt:
+        print("\n\nTransmitter stopped.")
         break
-        
     except Exception as e:
         packet_errors += 1
-        print(f"⚠️  Send error #{packet_errors}: {e}")
-        # Try to recover
-        try:
-            rf69.idle()
-            time.sleep(0.1)
-        except:
-            pass
-        time.sleep(0.05)
+        print(f"Error: {e}")
+        time.sleep(0.01)
+
+# ===== CLEANUP =====
+rf69.idle()
+rf69.sleep()
+mic.deinit()
+print(f"Total packets sent: {packet_count}, errors: {packet_errors}")
