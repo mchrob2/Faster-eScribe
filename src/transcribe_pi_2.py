@@ -23,8 +23,8 @@ if hf_token:
 
 # Configuration (Pi 5 tuned)
 FS = 16000
-CHUNK_SECONDS = 1.6        # how often we transcribe
-OVERLAP_SECONDS = 0.3
+CHUNK_SECONDS = 2.5        # how often we transcribe
+OVERLAP_SECONDS = 0.5
 MODEL_SIZE = "tiny.en"
 DEVICE = "cpu"
 COMPUTE_TYPE = "int8"
