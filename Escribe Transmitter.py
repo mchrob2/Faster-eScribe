@@ -1,7 +1,5 @@
-# SPDX-FileCopyrightText: 2025 Your Name
-# SPDX-License-Identifier: MIT
 """
-RFM69 Audio Transmitter – Low Latency (14 samples/packet)
+RFM69 Audio Transmitter 
 """
 
 import board
@@ -13,24 +11,24 @@ import struct
 import array
 from rfm69 import RFM69
 
-# ===== CONFIGURATION =====
+# CONFIGURATION 
 RADIO_FREQ_MHZ = 915.0
 NODE_ID = 1
 DEST_ID = 2
 ENCRYPTION_KEY = b"\x01\x02\x03\x04\x05\x06\x07\x08\x01\x02\x03\x04\x05\x06\x07\x08"
 SAMPLE_RATE = 2000
-SAMPLES_PER_PACKET = 14                     # reduced from 28 → 7 ms audio per packet
+SAMPLES_PER_PACKET = 14                     
 PACKET_SIZE = 4 + (SAMPLES_PER_PACKET * 2)  # 32 bytes
 TARGET_INTERVAL = 1.0 / (SAMPLE_RATE / SAMPLES_PER_PACKET)   # 7 ms
 
 print("=" * 60)
-print("RFM69 AUDIO TRANSMITTER – LOW LATENCY (14 samples/packet)")
+print("RFM69 AUDIO TRANSMITTER")
 print("=" * 60)
 
-# ===== PIN SETUP =====
+# PIN SETUP
 RFM_CS = digitalio.DigitalInOut(board.GP17)
 RFM_RST = digitalio.DigitalInOut(board.GP20)
-RFM_INT = digitalio.DigitalInOut(board.GP21)   # (unused)
+RFM_INT = digitalio.DigitalInOut(board.GP21)   
 
 mic = analogio.AnalogIn(board.GP26)
 led = digitalio.DigitalInOut(board.LED)
@@ -39,7 +37,7 @@ led.value = False
 
 print(f"Microphone: GP26 | LED: onboard")
 
-# ===== SPI SETUP (10 MHz for lower overhead) =====
+# SPI SETUP
 spi = busio.SPI(board.GP18, MOSI=board.GP19, MISO=board.GP16)
 while not spi.try_lock():
     pass
@@ -47,7 +45,7 @@ spi.configure(baudrate=10_000_000, phase=0, polarity=0)  # 10 MHz (RFM69 max)
 spi.unlock()
 print("SPI at 10 MHz")
 
-# ===== RADIO INITIALIZATION =====
+# RADIO INITIALIZATION
 print("Initializing RFM69...")
 rf69 = RFM69(spi, RFM_CS, RFM_RST, RADIO_FREQ_MHZ, baudrate=2_000_000)
 
@@ -70,17 +68,17 @@ print(f"TX Power: {rf69.tx_power} dBm")
 print(f"Packet size: {PACKET_SIZE} bytes")
 print(f"Target packet interval: {TARGET_INTERVAL*1000:.2f} ms")
 
-# ===== PRE-ALLOCATE BUFFERS =====
+# PRE-ALLOCATE BUFFERS
 packet_buffer = bytearray(PACKET_SIZE)
 audio_buffer = array.array('H', [0] * SAMPLES_PER_PACKET)
 
-# ===== SEND TEST PING =====
+# SEND TEST PING
 rf69.idle()
 time.sleep(0.05)
 rf69.send(b"PING")
 print("Test ping sent.\n")
 
-# ===== MAIN LOOP =====
+# MAIN LOOP
 packet_count = 0
 start_time = None
 last_print_time = 0
@@ -138,7 +136,7 @@ while True:
                 rate = packet_count / (current - start_time)
                 audio_pp = max(audio_buffer) - min(audio_buffer)
                 print(f"TX #{packet_count:6d} | rate {rate:5.1f}/s | "
-                      f"audio pp {audio_pp:5d} | errors {packet_errors}")
+                      f"audio pp {audio_pp:5d}")
             last_print_time = current
 
         # ----- Maintain exact packet rate -----
@@ -156,8 +154,8 @@ while True:
         print(f"Error: {e}")
         time.sleep(0.01)
 
-# ===== CLEANUP =====
+# turn off
 rf69.idle()
 rf69.sleep()
 mic.deinit()
-print(f"Total packets sent: {packet_count}, errors: {packet_errors}")
+print(f"Total packets sent: {packet_count}")
