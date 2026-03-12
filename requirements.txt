@@ -3,3 +3,4 @@ sounddevice
 numpy
 scipy
 python-dotenv
+pyserial
