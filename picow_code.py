@@ -15,7 +15,7 @@ Requirements:
     CircuitPython 9.x on Pico W
     No extra libraries needed (uses built-in wifi, socketpool, analogio)
 """
-
+   
 import wifi
 import socketpool
 import analogio
@@ -128,33 +128,28 @@ print("Starting audio stream...")
 
 while True:
     t_start = time.monotonic()
-    
-    # Collect PACKET_SAMPLES samples as fast as possible then send
-    for i in range(PACKET_SAMPLES):
-        raw = adc.value 				# 0-65535
-        signed = raw - ADC_MIDPOINT		# -32768 to 32767
-        packet_buf[4 + i] = encode_ulaw(signed)
 
-        # Busy-wait for sample interval
+    # Collect all samples first, then send once
+    for i in range(PACKET_SAMPLES):
+        raw = adc.value
+        signed = raw - ADC_MIDPOINT
+        packet_buf[4 + i] = encode_ulaw(signed)
         while (time.monotonic() - t_start) < (i * sample_interval):
             pass
-        
-        # Write header
-        struct.pack_into(">HH", packet_buf, 0, seq & 0xFFFF, SAMPLE_RATE)
-        seq += 1
-        
-        # Send UDP packet to Pi5
-        try:
-            sock.sendto(packet_buf, (pi5_addr, UDP_PORT))
-        except OSError as e:
-            print(f"Send error: {e}")
 
-        # Check for new HELLO (Pi5 reconnect)
-        try:
-            nbytes, addr = sock.recvfrom_into(hello_buf)
-            msg = bytes(hello_buf[:nbytes])
-            if msg.startswith(b"HELLO"):
-                pi5_addr = addr[0]
-                print(f"Pi5 reconnected from {pi5_addr}")
-        except OSError:
-            pass
+    # Outside the for loop, inside while True:
+    struct.pack_into(">HH", packet_buf, 0, seq & 0xFFFF, SAMPLE_RATE)
+    seq += 1
+    try:
+        sock.sendto(packet_buf, (pi5_addr, UDP_PORT))
+    except OSError as e:
+        print(f"Send error: {e}")
+
+    try:
+        nbytes, addr = sock.recvfrom_into(hello_buf)
+        msg = bytes(hello_buf[:nbytes])
+        if msg.startswith(b"HELLO"):
+            pi5_addr = addr[0]
+            print(f"Pi5 reconnected from {pi5_addr}")
+    except OSError:
+        pass
