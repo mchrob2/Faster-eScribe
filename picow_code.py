@@ -118,9 +118,9 @@ while pi5_addr is None:
         if msg.startswith(b"HELLO"):
             pi5_addr = addr[0]
             print(f"Pi5 connected from {pi5_addr}")
-        except OSError:
-            pass
-        time.sleep(0.1)
+    except OSError:
+        pass
+    time.sleep(0.1)
 
 print("Starting audio stream...")
 
