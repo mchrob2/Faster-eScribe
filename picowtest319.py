@@ -27,7 +27,7 @@ PACKET_SAMPLES = 320                 # 20 ms at 16 kHz
 
 print("Starting Access Point...")
 wifi.radio.stop_station()
-wifi.radio.start_ap(ssid=AP_SSID, password=AP_PASSWORD)
+wifi.radio.start_ap(ssid=AP_SSID, password=AP_PASSWORD, channel=6)
 print(f"AP started: SSID='{AP_SSID}' IP={wifi.radio.ipv4_address_ap}")
 print(f"Connect Pi5 to this network, then it will receive audio on UDP port {UDP_PORT}")
 
