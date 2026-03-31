@@ -35,7 +35,7 @@ PACKET_SAMPLES = 160               # ← 10 ms at 16 kHz  (was 320 / 20 ms)
 
 print("Starting Access Point...")
 wifi.radio.stop_station()
-wifi.radio.start_ap(ssid=AP_SSID, password=AP_PASSWORD)
+wifi.radio.start_ap(ssid=AP_SSID, password=AP_PASSWORD, channel=6)
 print(f"AP up  SSID='{AP_SSID}'  IP={wifi.radio.ipv4_address_ap}")
 time.sleep(1)  # let AP stabilise
 
